@@ -10,6 +10,7 @@
 ARG PLAYWRIGHT_VERSION
 ARG UV_VERSION
 ARG NODE_VERSION
+ARG BUN_VERSION
 
 # --- Ingredient stages ------------------------------------------------------------
 # Playwright's CDN downloader intermittently hangs at 100% (all bytes sent, stream
@@ -17,6 +18,8 @@ ARG NODE_VERSION
 FROM mcr.microsoft.com/playwright:v${PLAYWRIGHT_VERSION}-noble AS browsers
 # COPY --from cannot expand build args, so uv gets its own named stage.
 FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv
+# bun too: its image is only mined for the binary below.
+FROM oven/bun:${BUN_VERSION} AS bun
 
 FROM node:${NODE_VERSION}-bookworm
 
@@ -71,6 +74,12 @@ RUN deb="/tmp/delta.deb" \
   && dpkg -i "$deb" && rm "$deb"
 
 COPY --from=uv /uv /uvx /usr/local/bin/
+# Copy the bun binary and create the bunx link explicitly instead of relying on COPY
+# resolving the image's bunx symlink. BUN_INSTALL_BIN stays unset on purpose: the box
+# runs as non-root `node` (/usr/local/bin isn't writable), so bun's default per-user
+# ~/.bun is the correct destination for `bun i -g`.
+COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
+RUN ln -s bun /usr/local/bin/bunx
 
 # Directories the runtime user owns. Each one that a named volume mounts over must
 # exist node-owned in the image: Docker initialises a fresh volume from the image

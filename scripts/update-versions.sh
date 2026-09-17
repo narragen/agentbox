@@ -29,6 +29,7 @@ source_for() {
     PLAYWRIGHT_MCP_VERSION) echo "npm @playwright/mcp" ;;
     PLAYWRIGHT_VERSION) echo "npm playwright" ;;
     UV_VERSION) echo "github astral-sh/uv" ;;
+    BUN_VERSION) echo "github oven-sh/bun" ;;
     GIT_DELTA_VERSION) echo "github dandavison/delta" ;;
     PRE_COMMIT_VERSION) echo "pypi pre-commit" ;;
     NODE_VERSION|PYTHON_VERSION) echo "" ;;
@@ -42,7 +43,11 @@ latest() {
   local v
   case "$1" in
     npm) v="$(curl -fsSL "https://registry.npmjs.org/$2/latest" | jq -er .version)" || return 1 ;;
-    github) v="$(curl -fsSL "https://api.github.com/repos/$2/releases/latest" | jq -er .tag_name)" || return 1; v="${v#v}" ;;
+    github) v="$(curl -fsSL "https://api.github.com/repos/$2/releases/latest" | jq -er .tag_name)" || return 1
+      # oven-sh/bun tags releases "bun-v1.4.2": strip the longer "bun-v" prefix BEFORE
+      # the bare "v" (order matters), or the pin would become the invalid "bun-v1.4.2".
+      # A no-op for repos that tag plain "v1.2.3".
+      v="${v#bun-v}"; v="${v#v}" ;;
     pypi) v="$(curl -fsSL "https://pypi.org/pypi/$2/json" | jq -er .info.version)" || return 1 ;;
     *) return 1 ;;
   esac

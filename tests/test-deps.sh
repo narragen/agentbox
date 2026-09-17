@@ -14,7 +14,7 @@ if ! command -v sha256sum >/dev/null; then
   printf '#!/bin/sh\nexec shasum -a 256 "$@"\n' > "$STUB/sha256sum"
 fi
 export PM_LOG="$TMP/pm.log"
-for pm in npm pnpm corepack; do
+for pm in npm pnpm corepack bun; do
   cat > "$STUB/$pm" <<EOF2
 #!/usr/bin/env bash
 [ "\${1:-}" = --version ] && { echo "\${FAKE_${pm}_VERSION:-1.0.0}"; exit 0; }
@@ -80,10 +80,31 @@ fresh; printf '{}' > "$W/package.json"; touch "$W/yarn.lock"; nm
 deps >/dev/null
 assert_contains "yarn.lock without packageManager -> classic flags" "$(pmlog)" "corepack yarn install --frozen-lockfile"
 
+fresh; printf '{}' > "$W/package.json"; touch "$W/bun.lockb"; nm
+out="$(deps)"
+assert_contains "bun.lockb -> bun install --frozen-lockfile" "$(pmlog)" "bun install --frozen-lockfile"
+assert_contains "bun install reported done" "$out" "agentbox[node]: .: done"
+
 fresh; printf '{}' > "$W/package.json"; touch "$W/bun.lock"; nm
-rc=0; out="$(deps)" || rc=$?
-assert_eq "bun lockfile fails the run" 1 "$rc"
-assert_contains "bun: explains how to add it" "$out" "bun isn't in the base image"
+out="$(deps)"
+assert_contains "bun.lock -> bun install --frozen-lockfile" "$(pmlog)" "bun install --frozen-lockfile"
+: > "$PM_LOG"; out="$(deps)"
+assert_contains "bun unchanged -> skipped" "$out" "agentbox[node]: .: up to date"
+assert_eq "bun unchanged -> no package manager call" "" "$(pmlog)"
+: > "$PM_LOG"; printf 'registry...\n' > "$W/bunfig.toml"; deps >/dev/null
+assert_contains "bunfig.toml change -> reinstall" "$(pmlog)" "bun install"
+# The stub expands ${FAKE_${pm}_VERSION} with lowercase pm, so bun's variable is
+# FAKE_bun_VERSION; FAKE_BUN_VERSION would silently do nothing.
+: > "$PM_LOG"; FAKE_bun_VERSION=2.0.0 deps >/dev/null
+assert_contains "bun upgrade -> reinstall" "$(pmlog)" "bun install"
+: > "$PM_LOG"; printf 'x\n' >> "$W/bun.lock"; deps >/dev/null
+assert_contains "bun lockfile change -> reinstall" "$(pmlog)" "bun install"
+
+fresh; printf '{}' > "$W/package.json"; touch "$W/bun.lock"; nm
+rc=0; out="$(FAIL_PM=bun deps)" || rc=$?
+assert_eq "bun failure exits non-zero" 1 "$rc"
+assert_contains "bun failure named per directory" "$out" "agentbox[node]: .: install FAILED"
+if [ ! -f "$W/node_modules/.agentbox-stamp" ]; then pass "failed bun install leaves no stamp"; else fail "failed bun install leaves no stamp"; fi
 
 fresh; printf '{}' > "$W/package.json"; nm
 out="$(deps)"

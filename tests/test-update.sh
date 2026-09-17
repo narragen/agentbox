@@ -20,7 +20,10 @@ case "${STUB_MODE:-ok}" in
 esac
 case "$url" in
   *registry.npmjs.org*) printf '{"version":"%s"}' "$STUB_VERSION" ;;
-  *api.github.com*) printf '{"tag_name":"v%s"}' "$STUB_VERSION" ;;
+  *api.github.com*) case "$url" in
+      *oven-sh/bun*) printf '{"tag_name":"bun-v%s"}' "$STUB_VERSION" ;;
+      *) printf '{"tag_name":"v%s"}' "$STUB_VERSION" ;;
+    esac ;;
   *pypi.org*) printf '{"info":{"version":"%s"}}' "$STUB_VERSION" ;;
   *mcr.microsoft.com*) printf '{"tags":[%s]}' "${STUB_TAGS:-}" ;;
   *) exit 22 ;;
@@ -38,6 +41,7 @@ PYTHON_VERSION=3.14
 PLAYWRIGHT_VERSION=1.0.0
 PLAYWRIGHT_MCP_VERSION=0.0.1
 UV_VERSION=0.1.0
+BUN_VERSION=1.0.0
 PRE_COMMIT_VERSION=1.0.0
 EOF2
 }
@@ -64,6 +68,7 @@ assert_eq "report-only changes nothing" "1.0.0" "$(sed -n 's/^CLAUDE_CODE_VERSIO
 STUB_VERSION=2.0.0 STUB_TAGS='"v2.0.0-noble"' upd --apply >/dev/null
 assert_eq "--apply bumps npm pins" "2.0.0" "$(sed -n 's/^CLAUDE_CODE_VERSION=//p' "$V")"
 assert_eq "--apply bumps GitHub pins (v stripped)" "2.0.0" "$(sed -n 's/^UV_VERSION=//p' "$V")"
+assert_eq "--apply bumps bun pins (bun-v tag prefix stripped)" "2.0.0" "$(sed -n 's/^BUN_VERSION=//p' "$V")"
 assert_eq "--apply bumps PyPI pins" "2.0.0" "$(sed -n 's/^PRE_COMMIT_VERSION=//p' "$V")"
 assert_eq "--apply bumps PLAYWRIGHT_VERSION" "2.0.0" "$(sed -n 's/^PLAYWRIGHT_VERSION=//p' "$V")"
 assert_eq "PLAYWRIGHT_VERSION= doesn't clobber PLAYWRIGHT_MCP_VERSION's line" 2 "$(grep -c '^PLAYWRIGHT' "$V")"

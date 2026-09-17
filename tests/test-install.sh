@@ -73,7 +73,14 @@ assert_contains "--help prints usage" "$(inst "$H6" /bin/zsh --help)" "./install
 assert_absent "--help doesn't print code" "$(inst "$H6" /bin/zsh --help)" "set -euo"
 
 # --- no docker ---
-rc=0; out="$(env -u XDG_CONFIG_HOME HOME="$TMP/nodocker" SHELL=/bin/zsh PATH=/usr/bin:/bin bash "$INSTALL" --no-build 2>&1)" || rc=$?
+# Docker lives in /usr/bin on CI runners and Linux hosts, so the PATH must be
+# built docker-less rather than assumed to be: a full /bin+/usr/bin copy minus
+# docker (-f: on merged-/usr the two globs hit the same names).
+NDBIN="$TMP/nodocker-bin"; mkdir -p "$NDBIN"
+ln -sfn /bin/* "$NDBIN"/
+ln -sfn /usr/bin/* "$NDBIN"/
+rm -f "$NDBIN/docker"
+rc=0; out="$(env -u XDG_CONFIG_HOME HOME="$TMP/nodocker" SHELL=/bin/zsh PATH="$NDBIN" bash "$INSTALL" --no-build 2>&1)" || rc=$?
 assert_contains "missing docker is explained" "$out" "docker not found"
 
 # --- docker present but unusable ---
