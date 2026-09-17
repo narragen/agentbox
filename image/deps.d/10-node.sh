@@ -71,7 +71,7 @@ for dir in ${AGENTBOX_NODE_DIRS:-.}; do
   stamp_file="$root/node_modules/.agentbox-stamp"
   stamp="$(stamp_of "$root"/package.json "$root"/pnpm-lock.yaml "$root"/pnpm-workspace.yaml \
     "$root"/yarn.lock "$root"/package-lock.json "$root"/npm-shrinkwrap.json "$root"/.npmrc \
-    "$root"/bun.lock "$root"/bun.lockb)"
+    "$root"/bun.lock "$root"/bun.lockb "$root"/bunfig.toml)"
   if up_to_date "$stamp_file" "$stamp"; then
     log "$dir: up to date"
     continue

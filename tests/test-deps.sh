@@ -91,6 +91,12 @@ assert_contains "bun.lock -> bun install --frozen-lockfile" "$(pmlog)" "bun inst
 : > "$PM_LOG"; out="$(deps)"
 assert_contains "bun unchanged -> skipped" "$out" "agentbox[node]: .: up to date"
 assert_eq "bun unchanged -> no package manager call" "" "$(pmlog)"
+: > "$PM_LOG"; printf 'registry...\n' > "$W/bunfig.toml"; deps >/dev/null
+assert_contains "bunfig.toml change -> reinstall" "$(pmlog)" "bun install"
+# The stub expands ${FAKE_${pm}_VERSION} with lowercase pm, so bun's variable is
+# FAKE_bun_VERSION; FAKE_BUN_VERSION would silently do nothing.
+: > "$PM_LOG"; FAKE_bun_VERSION=2.0.0 deps >/dev/null
+assert_contains "bun upgrade -> reinstall" "$(pmlog)" "bun install"
 : > "$PM_LOG"; printf 'x\n' >> "$W/bun.lock"; deps >/dev/null
 assert_contains "bun lockfile change -> reinstall" "$(pmlog)" "bun install"
 

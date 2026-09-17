@@ -76,7 +76,7 @@ if [ ! -f "$ENV_FILE" ]; then
   (umask 077 && cat > "$ENV_FILE" <<'ENV'
 # agentbox: environment for every box (docker --env-file format).
 # One KEY=value per line. No quotes (they would become part of the value), no `export`.
-# Empty values are ignored inside the box.
+# Empty values of these token keys are dropped inside the box.
 
 # GitHub CLI + git push over HTTPS (fine-grained PAT recommended).
 GH_TOKEN=
@@ -92,7 +92,7 @@ else
   echo "Keeping existing $ENV_FILE."
 fi
 
-# 4. Optional extra host mounts (see README: "Sharing more host files").
+# 4. Optional extra host mounts (see README: "Bind mounts").
 BINDS_FILE="$(dirname "$ENV_FILE")/binds"
 if [ ! -f "$BINDS_FILE" ]; then
   cat > "$BINDS_FILE" <<'BINDS'

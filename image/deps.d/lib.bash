@@ -8,7 +8,8 @@ log() { printf 'agentbox[%s]: %s\n' "$AGENTBOX_INSTALLER" "$*"; }
 
 # toolchain_versions -> the versions an install depends on. A new Node major changes
 # native-module ABIs, and a new uv, pnpm or bun can lay out environments differently,
-# so a toolchain bump (agentbox update) must trigger a reinstall.
+# so a toolchain bump (agentbox update) must trigger a reinstall. Every installer hashes
+# this same list, so e.g. a bun bump also re-syncs python once — cheap and conservative.
 toolchain_versions() {
   local tool
   for tool in node pnpm uv bun; do

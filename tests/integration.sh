@@ -178,17 +178,22 @@ printf 'console.log("BUN-REQUIRE", require("is-number")(7))\n' > "$B/check.js"
 # Generate a real bun.lock with the image's own bun (follows the npm/pnpm fixture pattern).
 docker run --rm --user node -v "$B":/workspace agentbox:latest bash -c \
   'cd /workspace && bun install --lockfile-only' >/dev/null
+# sha256 of a file, via shasum where sha256sum is missing (older macOS), as in test-deps.sh.
+file_hash() { if command -v sha256sum >/dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1; }
+BUN_LOCK_HASH="$(file_hash "$B/bun.lock")"
+BUN_PIN="$(sed -n 's/^BUN_VERSION=//p' "$AGENTBOX_ROOT/versions.env")"
 BO="$(launch "$B")"
 assert_contains "bun install ran" "$BO" "agentbox[node]: .: installing"
 assert_contains "bun frozen install succeeded" "$BO" "agentbox[node]: .: done"
 BO2="$(launch "$B" 'echo "BUN-VER $(bun --version) BUNX $(bunx --version)"
 cd /workspace && bun run check.js')"
 assert_contains "bun relaunch is cached" "$BO2" "agentbox[node]: .: up to date"
-assert_contains "bun and bunx on PATH" "$BO2" "BUN-VER 1.4.2 BUNX 1.4.2"
+assert_contains "bun and bunx on PATH at the versions.env pin" "$BO2" "BUN-VER $BUN_PIN BUNX $BUN_PIN"
 assert_contains "bun resolves the frozen install" "$BO2" "BUN-REQUIRE true"
 printf '{"name":"bunproj","version":"1.0.0","dependencies":{"is-number":"7.0.0","is-odd":"3.0.1"}}\n' > "$B/package.json"
 BO3="$(launch "$B")"
 assert_contains "out-of-sync lockfile: bun failure reported" "$BO3" "agentbox[node]: .: install FAILED"
+assert_eq "host bun.lock untouched by frozen installs" "$BUN_LOCK_HASH" "$(file_hash "$B/bun.lock")"
 
 # ---------------------------------------------------------------------------------------
 echo "-- linked worktree"
