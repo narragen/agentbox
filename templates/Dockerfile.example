@@ -1,0 +1,19 @@
+# Rename to Dockerfile to enable. agentbox builds it on top of the base image (build
+# context: this .agentbox/ directory) and runs the result for this project only.
+# Use it for toolchains and system packages; the box itself has no sudo. Whatever
+# USER you end with, the box always runs as `node`.
+ARG AGENTBOX_IMAGE
+FROM ${AGENTBOX_IMAGE}
+
+# Example: Go, from the official image (pin the version you want). The caches point
+# into the project so downloads survive the box; add .cache/ to your .gitignore.
+# COPY --from=golang:1.27.1-bookworm /usr/local/go /usr/local/go
+# ENV PATH=/usr/local/go/bin:/home/node/go/bin:$PATH \
+#     GOMODCACHE=/workspace/.cache/go/mod \
+#     GOCACHE=/workspace/.cache/go/build
+
+# Example: a Debian package.
+# USER root
+# RUN apt-get update && apt-get install -y --no-install-recommends postgresql-client \
+#   && rm -rf /var/lib/apt/lists/*
+# USER node

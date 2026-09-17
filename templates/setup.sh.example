@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Rename to setup.sh to enable. Runs inside the box, from the project root, on EVERY
+# launch after the built-in Node/Python installers, so keep it idempotent and fast.
+# agentbox asks you to approve this file the first time, and again whenever it changes.
+#
+# Variables exported here don't reach your shell or the agents; set those with ENV in
+# .agentbox/Dockerfile. Only /workspace and the per-box volumes survive exit, so keep
+# tool caches inside the project (see Dockerfile.example).
+set -euo pipefail
+
+# (cd backend && go mod download)

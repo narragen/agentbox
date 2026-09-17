@@ -1,0 +1,97 @@
+# shellcheck disable=SC2034  # HISTFILE, SAVEHIST and PROMPT are read by zsh
+# agentbox shell setup. Sourced by ~/.zshrc (every interactive shell, including
+# `docker exec` shells) and by the entrypoint. Keep it valid in both zsh and bash;
+# zsh-only settings sit in the ZSH_VERSION block at the end.
+
+export PATH="$HOME/.local/bin:/usr/local/share/npm-global/bin:$PATH"
+
+# An empty token from the env file (`KEY=`) would override a stored login and break
+# auth, so drop empty ones rather than export them.
+for _agentbox_v in GH_TOKEN CLAUDE_CODE_OAUTH_TOKEN CODEX_ACCESS_TOKEN ANTHROPIC_API_KEY OPENAI_API_KEY; do
+  eval "[ -n \"\${$_agentbox_v:-}\" ] || unset $_agentbox_v"
+done
+unset _agentbox_v
+
+# The project virtualenv (built by agentbox-deps) goes first on PATH.
+if [ -x /home/node/.venvs/project/bin/python ]; then
+  export VIRTUAL_ENV=/home/node/.venvs/project
+  export PATH="$VIRTUAL_ENV/bin:$PATH"
+fi
+
+# --- Agent wrappers -------------------------------------------------------------------
+# Agents run without approval prompts: the container is the boundary. Guardrails live
+# in each agent's managed (system) config, which project files cannot override. A
+# project can add its own settings with a file in .agentbox/, read on every invocation.
+AGENTBOX_PROJECT="${AGENTBOX_WORKSPACE:-/workspace}/.agentbox"
+
+# Claude Code: bypass comes from this flag, not from settings, so a plain
+# `command claude` (a script, a subshell) falls back to normal prompting.
+claude() {
+  if [ -f "$AGENTBOX_PROJECT/claude.settings.json" ]; then
+    command claude --dangerously-skip-permissions --settings "$AGENTBOX_PROJECT/claude.settings.json" "$@"
+  else
+    command claude --dangerously-skip-permissions "$@"
+  fi
+}
+
+# Codex: its own command sandbox (bubblewrap) needs user namespaces, which Docker's
+# default seccomp profile blocks, so every shell command would fail inside the box.
+# The wrapper therefore turns Codex's sandbox off and relies on the container; the
+# managed PreToolUse hook in /etc/codex/requirements.toml still runs.
+#
+# --profile container reads ~/.codex/container.config.toml, rewritten from the
+# project's file (or the image default) on every call. Codex rejects --profile on its
+# non-runtime subcommands and has no config key or env var for a default profile, so
+# those subcommands get no flags. Everything else (no args, a prompt, exec, resume,
+# mcp, ...) gets both.
+_agentbox_codex_profile() {
+  _agentbox_src=/etc/agentbox/codex-profile.toml
+  [ -f "$AGENTBOX_PROJECT/codex.config.toml" ] && _agentbox_src="$AGENTBOX_PROJECT/codex.config.toml"
+  cp "$_agentbox_src" "${CODEX_HOME:-$HOME/.codex}/container.config.toml"
+  unset _agentbox_src
+}
+codex() {
+  _agentbox_codex_profile
+  case "${1:-}" in
+    agents|login|logout|plugin|app-server|remote-control|completion|update|doctor|debug|\
+    apply|a|migrate-rollouts|cloud|exec-server|features|help|-h|--help|-V|--version)
+      command codex "$@" ;;
+    *)
+      command codex --dangerously-bypass-approvals-and-sandbox --profile container "$@" ;;
+  esac
+}
+
+# opencode layers: host global config < OPENCODE_CONFIG (allow-all baseline) < repo
+# opencode.json < OPENCODE_CONFIG_CONTENT (the project's .agentbox file) < managed
+# /etc/opencode (guardrails + Playwright).
+export OPENCODE_CONFIG=/etc/agentbox/opencode-base.json
+opencode() {
+  _agentbox_oc=""
+  for _agentbox_f in "$AGENTBOX_PROJECT/opencode.jsonc" "$AGENTBOX_PROJECT/opencode.json"; do
+    if [ -f "$_agentbox_f" ]; then _agentbox_oc="$_agentbox_f"; break; fi
+  done
+  unset _agentbox_f
+  if [ -n "$_agentbox_oc" ]; then
+    OPENCODE_CONFIG_CONTENT="$(cat "$_agentbox_oc")" command opencode "$@"
+  else
+    command opencode "$@"
+  fi
+}
+
+# --- Interactive zsh --------------------------------------------------------------------
+if [ -n "${ZSH_VERSION:-}" ]; then
+  HISTFILE="$HOME/.zsh_history"   # wiped with the box, like the rest of ~
+  HISTSIZE=10000
+  SAVEHIST=10000
+  setopt INC_APPEND_HISTORY HIST_IGNORE_DUPS
+  autoload -Uz compinit vcs_info && compinit -u
+  zstyle ':vcs_info:git:*' formats ' (%b)'
+  setopt PROMPT_SUBST
+  precmd() { vcs_info; }
+  PROMPT='%F{cyan}agentbox%f %F{blue}%~%f%F{yellow}${vcs_info_msg_0_}%f %# '
+  # fzf's key bindings need the line editor, which only exists on a terminal.
+  if [[ -o zle ]] && [ -t 0 ]; then
+    source /usr/share/doc/fzf/examples/key-bindings.zsh
+    source /usr/share/doc/fzf/examples/completion.zsh
+  fi
+fi

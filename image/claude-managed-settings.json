@@ -1,0 +1,25 @@
+{
+  "skipDangerousModePermissionPrompt": true,
+  "permissions": {
+    "deny": [
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Bash(git worktree prune:*)",
+      "Bash(git worktree remove:*)",
+      "Bash(git worktree move:*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/etc/agentbox/hooks/guard-git-worktree.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

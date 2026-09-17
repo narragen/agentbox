@@ -1,0 +1,12 @@
+# Managed Codex policy. A managed hook is trusted by policy, so the guard runs on a
+# fresh config volume without --dangerously-bypass-hook-trust (which would also
+# auto-trust every repo-local hook). Project hooks still run alongside it.
+[features]
+hooks = true
+
+[[hooks.PreToolUse]]
+matcher = "^Bash$"
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "/etc/agentbox/hooks/guard-git-worktree.sh"

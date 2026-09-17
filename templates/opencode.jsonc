@@ -1,0 +1,11 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  // Applied only inside this project's box, on top of the repo's opencode.json.
+  // Changes apply the next time you run `opencode`.
+  // The default allows every bash command; a later, more specific pattern wins.
+  "permission": {
+    "bash": {
+      "git push *": "ask"
+    }
+  }
+}

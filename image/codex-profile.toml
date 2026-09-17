@@ -1,0 +1,11 @@
+# agentbox's default Codex profile. The `codex` wrapper copies it to
+# ~/.codex/container.config.toml on every call, unless the project has
+# .agentbox/codex.config.toml, which replaces it.
+#
+# Codex's own sandbox is off inside the box (Docker blocks what it needs), so
+# permission and network rules here would not be enforced. Use this file for model and
+# behaviour settings; the container is the security boundary.
+
+# Keep the login in ~/.codex/auth.json (a per-box volume) rather than a keyring,
+# which doesn't exist in the container.
+cli_auth_credentials_store = "file"

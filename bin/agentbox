@@ -1,0 +1,305 @@
+#!/usr/bin/env bash
+# agentbox: run coding agents (Claude Code, Codex, opencode) in a disposable Docker
+# sandbox scoped to one directory. See README.md.
+set -euo pipefail
+
+# Resolve our real location: install.sh puts a symlink to this file on PATH.
+_self="${BASH_SOURCE[0]}"
+while [ -L "$_self" ]; do
+  _dir="$(cd -P "$(dirname "$_self")" && pwd)"
+  _self="$(readlink "$_self")"
+  case "$_self" in /*) ;; *) _self="$_dir/$_self" ;; esac
+done
+AGENTBOX_HOME="$(cd -P "$(dirname "$_self")/.." && pwd)"
+# shellcheck source=../lib/common.sh
+. "$AGENTBOX_HOME/lib/common.sh"
+
+# AGENTBOX_DRY_RUN=1 is a test hook: `run` prints the docker argv (one element per
+# line) instead of launching, and skips everything that needs docker or a terminal.
+DRY_RUN="${AGENTBOX_DRY_RUN:-0}"
+
+# Host files every box gets, when they exist. Missing ones are skipped: `docker run -v`
+# would otherwise create an empty root-owned DIRECTORY at the host path, which for
+# ~/.claude/.credentials.json corrupts the host login. Add your own in
+# ~/.config/agentbox/binds rather than editing this list.
+HOST_BINDS=(
+  "$HOME/.claude/CLAUDE.md|/home/node/.claude/CLAUDE.md:ro"
+  "$HOME/.claude/settings.json|/home/node/.claude/settings.json:ro"
+  "$HOME/.claude/skills|/home/node/.claude/skills:ro"
+  "$HOME/.claude/agents|/home/node/.claude/agents:ro"
+  "$HOME/.claude/commands|/home/node/.claude/commands:ro"
+  # Read-write: the agent refreshes these login tokens in place.
+  "$HOME/.claude/.credentials.json|/home/node/.claude/.credentials.json"
+  "$HOME/.codex/auth.json|/home/node/.codex/auth.json"
+  "$HOME/.codex/AGENTS.md|/home/node/.codex/AGENTS.md:ro"
+  "$HOME/.config/opencode/opencode.json|/home/node/.config/opencode/opencode.json:ro"
+  "$HOME/.config/opencode/opencode.jsonc|/home/node/.config/opencode/opencode.jsonc:ro"
+  "$HOME/.config/opencode/AGENTS.md|/home/node/.config/opencode/AGENTS.md:ro"
+  "$HOME/.config/opencode/agent|/home/node/.config/opencode/agent:ro"
+  "$HOME/.config/opencode/command|/home/node/.config/opencode/command:ro"
+)
+
+usage() {
+  cat <<'EOF'
+Usage: agentbox [COMMAND] [DIR]
+
+Commands (DIR defaults to the current directory):
+  run [DIR]          Open a sandbox shell for DIR (the default command). Builds the
+                     image first if needed. If DIR's box is already running, opens
+                     another shell in it.
+  build [DIR]        Build the image, plus DIR/.agentbox/Dockerfile if present.
+  init [DIR]         Create DIR/.agentbox/ with example config files.
+  clean [-y] [DIR]   Delete DIR's box: its volumes (agent logins, history, installed
+                     dependencies) and its project image.
+  update [--apply]   Check the pinned tool versions against upstream.
+  version            Show the agentbox version and pinned tools.
+  help               Show this help.
+
+Tokens for every box go in ~/.config/agentbox/env; extra host mounts go in
+~/.config/agentbox/binds. See README.md.
+EOF
+}
+
+resolve_ws() {  # DIR -> absolute path
+  [ -d "${1:-.}" ] || die "not a directory: ${1:-.}"
+  (cd "${1:-.}" && pwd)
+}
+
+container_running() {  # NAME
+  [ -n "$(docker ps -q --filter "name=^agentbox-$1\$")" ]
+}
+
+cmd_version() {
+  local rev
+  rev="$(git -C "$AGENTBOX_HOME" describe --always --dirty --tags 2>/dev/null || echo unknown)"
+  echo "agentbox $rev ($AGENTBOX_HOME)"
+  grep -E '^[A-Z]' "$AGENTBOX_HOME/versions.env" | sed 's/^/  /'
+}
+
+cmd_build() {
+  local ws name
+  ws="$(resolve_ws "${1:-.}")"
+  name="$(sandbox_name "$ws")"
+  require_docker
+  approve_project_code "$ws"
+  build_images "$ws" "$name" || die "image build failed (output above)"
+  note "built $(project_image "$ws" "$name")"
+}
+
+cmd_init() {
+  local ws dest f
+  ws="$(resolve_ws "${1:-.}")"
+  dest="$ws/.agentbox"
+  mkdir -p "$dest"
+  for f in "$AGENTBOX_HOME"/templates/*; do
+    if [ -e "$dest/$(basename "$f")" ]; then
+      echo "  exists   .agentbox/$(basename "$f")"
+    else
+      cp "$f" "$dest/"
+      echo "  created  .agentbox/$(basename "$f")"
+    fi
+  done
+  echo "Every file is optional; delete what you don't need. Files ending in .example"
+  echo "do nothing until you remove that suffix."
+}
+
+cmd_clean() {
+  local yes=0 ws name vols answer
+  if [ "${1:-}" = "-y" ]; then yes=1; shift; fi
+  ws="$(resolve_ws "${1:-.}")"
+  name="$(sandbox_name "$ws")"
+  require_docker
+  if container_running "$name"; then die "box agentbox-$name is running; exit it first"; fi
+  vols="$(docker volume ls -q | grep -E "$(volume_pattern "$name")" || true)"
+  if [ -z "$vols" ]; then
+    echo "agentbox: no volumes for $ws"
+  else
+    echo "Volumes for $ws (agent logins, session history, installed dependencies):"
+    # shellcheck disable=SC2086
+    printf '  %s\n' $vols
+    if [ "$yes" != 1 ]; then
+      printf 'Delete them? [y/N] '
+      read -r answer || answer=""
+      case "$answer" in y|Y|yes) ;; *) echo "Aborted."; return 1 ;; esac
+    fi
+    # shellcheck disable=SC2086
+    docker volume rm $vols >/dev/null
+    echo "agentbox: removed $(printf '%s\n' "$vols" | wc -l | tr -d ' ') volume(s)"
+  fi
+  if docker image inspect "$AGENTBOX_PROJ_REPO:$name" >/dev/null 2>&1; then
+    docker image rm "$AGENTBOX_PROJ_REPO:$name" >/dev/null && echo "agentbox: removed image $AGENTBOX_PROJ_REPO:$name"
+  fi
+}
+
+# refuse_broad_dir WORKSPACE -> die when WORKSPACE is /, your home, or a folder that
+# contains your home: the box would get your SSH keys and credentials read-write.
+refuse_broad_dir() {
+  local ws_real home ws
+  ws_real="$(cd -P "$1" && pwd)"
+  [ "$ws_real" != / ] || die "refusing to open /. Run agentbox from a project folder."
+  # Compare both the paths as given and with symlinks resolved (macOS /var is a link).
+  for home in "$HOME" "$(cd -P "$HOME" 2>/dev/null && pwd)"; do
+    for ws in "$1" "$ws_real"; do
+      [ -n "$home" ] || continue
+      case "${home%/}/" in
+        "${ws%/}/"*) die "refusing to open $1: it is (or contains) your home folder, which would give the box your SSH keys and credentials. Run agentbox from a project folder." ;;
+      esac
+    done
+  done
+}
+
+cmd_run() {
+  local ws name image
+  ws="$(resolve_ws "${1:-.}")"
+  refuse_broad_dir "$ws"
+  name="$(sandbox_name "$ws")"
+  load_config "$ws"
+  load_user_binds
+  resolve_git_dirs "$ws"
+  image="$(project_image "$ws" "$name")"
+
+  if [ "$DRY_RUN" != 1 ]; then
+    if [ ! -t 0 ] || [ ! -t 1 ]; then
+      die "needs an interactive terminal. Run it from a normal terminal tab, not a pipe or an agent's shell."
+    fi
+    require_docker
+    if container_running "$name"; then
+      note "agentbox-$name is already running; opening another shell in it."
+      exec docker exec -it -w /workspace "agentbox-$name" zsh
+    fi
+    approve_project_code "$ws"
+    note "checking the image (quick, unless agentbox was updated: then a few minutes)..."
+    if ! build_images "$ws" "$name" quiet; then
+      docker image inspect "$image" >/dev/null 2>&1 || die "image build failed and there is no earlier $image to fall back on"
+      warn "image build failed; starting the EXISTING $image, which may be out of date. Fix the build, then run 'agentbox build'."
+    fi
+  fi
+
+  heal_stray_worktree "$ws"
+
+  # --user/--cap-drop/no-new-privileges: the box is always an unprivileged `node`,
+  # even when a project Dockerfile ends with `USER root`. --init reaps the zombie
+  # processes browsers and MCP servers leave behind.
+  local args=(
+    docker run -it --rm --init
+    --name "agentbox-$name"
+    --hostname agentbox
+    --user node
+    --cap-drop ALL
+    --security-opt no-new-privileges
+    -e TERM -e COLORTERM
+    -e AGENTBOX=1
+    -e "AGENTBOX_NODE_DIRS=$NODE_DIRS"
+    -e "AGENTBOX_PYTHON_DIR=$PYTHON_DIR"
+    -v "$ws":/workspace
+    -v "$(agent_volume claude "$name")":/home/node/.claude
+    -v "$(agent_volume codex "$name")":/home/node/.codex
+    -v "$(agent_volume opencode "$name")":/home/node/.local/share/opencode
+    -v "$(agent_volume venv "$name")":/home/node/.venvs
+  )
+
+  # node_modules: one volume per configured directory that has a package.json. The
+  # mount point is created on the host first; otherwise Docker creates it, root-owned
+  # on Linux, and a later host `npm install` fails.
+  local d vol target
+  set -f
+  for d in $NODE_DIRS; do
+    [ -f "$ws/$d/package.json" ] || continue
+    vol="$(node_volume "$d" "$name")"
+    if [ "$d" = . ]; then target=node_modules; else target="$d/node_modules"; fi
+    if [ "$DRY_RUN" != 1 ]; then
+      mkdir -p "$ws/$target"
+      ensure_node_volume "$vol" "$image"
+    fi
+    args+=(-v "$vol:/workspace/$target")
+  done
+  set +f
+
+  # Linked git worktree: its .git file points into the main repo's .git, outside $ws.
+  # Mounting that directory at the same absolute path is all git needs. No GIT_DIR or
+  # GIT_WORK_TREE: they would apply to every git process in the box, so a `git init`
+  # anywhere would rewrite the host repo.
+  if [ "$GIT_KIND" = linked ]; then
+    args+=(-v "$GIT_COMMON:$GIT_COMMON")
+    note "linked worktree: also mounting $GIT_COMMON"
+  elif [ "$GIT_KIND" = none ]; then
+    local top
+    if top="$(git -C "$ws" rev-parse --show-toplevel 2>/dev/null)"; then
+      warn "$ws is inside the git repo $top but is not its root, so git won't work in the box. Run agentbox from $top to use git."
+    fi
+  fi
+
+  # Git identity only: mounting the whole host .gitconfig would import credential
+  # helpers, URL rewrites and signing config. Resolved in the target directory, so
+  # includeIf-based per-directory identities apply.
+  local git_name git_email gitcfg
+  git_name="$(git -C "$ws" config --get user.name 2>/dev/null || true)"
+  git_email="$(git -C "$ws" config --get user.email 2>/dev/null || true)"
+  if [ -n "$git_name" ] || [ -n "$git_email" ]; then
+    # Per-user cache dir, not a shared /tmp where another user could plant a symlink.
+    mkdir -p "$AGENTBOX_CACHE_DIR"
+    gitcfg="$AGENTBOX_CACHE_DIR/gitconfig-$name"
+    rm -f "$gitcfg"
+    {
+      echo "[user]"
+      if [ -n "$git_name" ]; then printf '\tname = %s\n' "$git_name"; fi
+      if [ -n "$git_email" ]; then printf '\temail = %s\n' "$git_email"; fi
+    } > "$gitcfg"
+    chmod 600 "$gitcfg"
+    args+=(-v "$gitcfg:/home/node/.gitconfig-host:ro")
+  fi
+
+  local entry src dest
+  for entry in "${HOST_BINDS[@]}"; do
+    src="${entry%%|*}"
+    dest="${entry#*|}"
+    if [ -e "$src" ]; then args+=(-v "$src:$dest"); fi
+  done
+  for entry in ${USER_BINDS[@]+"${USER_BINDS[@]}"}; do
+    args+=(-v "$entry")
+  done
+
+  if [ -f "$AGENTBOX_ENV_FILE" ]; then
+    # shellcheck disable=SC2012  # ls is the portable way to read mode bits on macOS and Linux
+    if [ "$(ls -l "$AGENTBOX_ENV_FILE" | cut -c5-10)" != "------" ]; then
+      warn "$AGENTBOX_ENV_FILE is readable by other users; run: chmod 600 $AGENTBOX_ENV_FILE"
+    fi
+    args+=(--env-file "$AGENTBOX_ENV_FILE")
+  fi
+
+  # Display times in the host's zone (cosmetic; the clock itself is shared).
+  local host_tz
+  host_tz="$(readlink /etc/localtime 2>/dev/null | sed -E 's#.*/zoneinfo/##' || true)"
+  if [ -n "$host_tz" ]; then args+=(-e "TZ=$host_tz"); fi
+
+  args+=("$image")
+
+  if [ "$DRY_RUN" = 1 ]; then
+    printf '%s\n' "${args[@]}"
+    return 0
+  fi
+
+  note "$ws -> /workspace (box agentbox-$name)"
+  # Not exec: when the box exits, remove a leaked core.worktree and report any git
+  # hooks or config the session planted for the host. Globals, because the trap runs
+  # after this function's locals are gone (and must not interpolate repo content).
+  RUN_WS="$ws"
+  RUN_GIT_BEFORE="$(git_exec_snapshot "$ws")"
+  trap 'heal_stray_worktree "$RUN_WS"; warn_git_exec_changes "$RUN_WS" "$RUN_GIT_BEFORE"' EXIT
+  "${args[@]}"
+}
+
+case "${1:-run}" in
+  run) shift $(( $# > 0 ? 1 : 0 )); cmd_run "$@" ;;
+  build) shift; cmd_build "$@" ;;
+  init) shift; cmd_init "$@" ;;
+  clean) shift; cmd_clean "$@" ;;
+  update) shift; exec "$AGENTBOX_HOME/scripts/update-versions.sh" "$@" ;;
+  version|--version) cmd_version ;;
+  help|-h|--help) usage ;;
+  -*) usage >&2; exit 2 ;;
+  *)
+    if [ -d "$1" ]; then cmd_run "$1"
+    else echo "agentbox: unknown command '$1'" >&2; usage >&2; exit 2
+    fi ;;
+esac

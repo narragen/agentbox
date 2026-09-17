@@ -1,0 +1,10 @@
+# agentbox project settings. KEY=VALUE, one per line. This file is parsed, never
+# executed. Every key is optional. Changes apply the next time a box starts.
+
+# Directories (relative to the project root) whose package.json dependencies are
+# installed into the box. Each gets its own node_modules volume. Default: .
+# Example for a repo with a frontend/ app and a tools/ package:
+# NODE_DIRS=frontend tools
+
+# The one directory holding pyproject.toml or requirements.txt. Default: .
+# PYTHON_DIR=backend

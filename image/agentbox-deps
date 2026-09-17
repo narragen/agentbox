@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Install project dependencies into this box's volumes. Runs at every launch and skips
+# anything whose dependency files haven't changed. Run it by hand after editing them;
+# `agentbox-deps --force` reinstalls regardless.
+#
+# Installers live in /opt/agentbox/deps.d/NN-name.sh and run in order. To support
+# another language, add an installer there (and its toolchain to the Dockerfile).
+# A project's own .agentbox/setup.sh runs last, on every launch.
+#
+# AGENTBOX_DEPS_DIR and AGENTBOX_WORKSPACE exist so tests can run this on the host.
+set -uo pipefail
+deps_dir="${AGENTBOX_DEPS_DIR:-/opt/agentbox/deps.d}"
+workspace="${AGENTBOX_WORKSPACE:-/workspace}"
+
+case "${1:-}" in
+  "") export AGENTBOX_FORCE=0 ;;
+  --force) export AGENTBOX_FORCE=1 ;;
+  *) echo "usage: agentbox-deps [--force]" >&2; exit 2 ;;
+esac
+
+failed=()
+for installer in "$deps_dir"/[0-9]*.sh; do
+  [ -f "$installer" ] || continue
+  bash "$installer" || failed+=("$(basename "$installer")")
+done
+
+if [ -f "$workspace/.agentbox/setup.sh" ]; then
+  echo "agentbox[setup]: running .agentbox/setup.sh"
+  (cd "$workspace" && bash .agentbox/setup.sh) || failed+=(".agentbox/setup.sh")
+fi
+
+if [ "${#failed[@]}" -gt 0 ]; then
+  echo "agentbox: dependency setup FAILED in: ${failed[*]}" >&2
+  exit 1
+fi

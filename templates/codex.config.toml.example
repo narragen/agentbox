@@ -1,0 +1,13 @@
+# Rename to codex.config.toml to enable. It then REPLACES agentbox's default Codex
+# profile (/etc/agentbox/codex-profile.toml) inside this project's box, so keep the
+# line below. Changes apply the next time you run `codex`.
+#
+# Codex's own sandbox is off inside the box (Docker blocks what it needs), so
+# permission and network settings here are NOT enforced. The container is the
+# boundary; use this file for model and behaviour settings.
+# Reference: https://developers.openai.com/codex/config-reference
+
+cli_auth_credentials_store = "file"
+
+# model = "gpt-5.6-sol"
+# model_reasoning_effort = "high"
