@@ -9,7 +9,7 @@
 # Installs are frozen to the lockfile: a lockfile out of sync with package.json fails
 # loudly rather than silently rewriting a file in your repo.
 #
-# Workspaces (pnpm, npm, yarn) are refused: a workspace install writes node_modules
+# Workspaces (pnpm, npm, yarn, bun) are refused: a workspace install writes node_modules
 # links into every member directory, which on the host tree are not volumes.
 set -euo pipefail
 # shellcheck disable=SC2034  # read by lib.bash
@@ -28,8 +28,9 @@ install_in_cwd() {
       corepack yarn install --frozen-lockfile
     fi
   elif [ -f bun.lock ] || [ -f bun.lockb ]; then
-    log "bun isn't in the base image. Install it in .agentbox/Dockerfile and run 'bun install' from .agentbox/setup.sh."
-    return 1
+    # Branch only fires when a bun lockfile exists, so --frozen-lockfile installs
+    # exactly that lockfile and fails loudly if package.json disagrees.
+    bun install --frozen-lockfile
   elif [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
     npm ci --no-audit --no-fund
   else
@@ -39,8 +40,10 @@ install_in_cwd() {
 }
 
 # in_workspace DIR -> success when DIR or any parent up to the project root declares a
-# pnpm/npm/yarn workspace. pnpm 10+ also keeps plain settings in pnpm-workspace.yaml,
-# so that file only counts when it lists `packages:`.
+# pnpm/npm/yarn/bun workspace. pnpm 10+ also keeps plain settings in
+# pnpm-workspace.yaml, so that file only counts when it lists `packages:`. bun has no
+# workspace file of its own: bun workspaces use package.json's "workspaces" field, same
+# as npm/yarn, so the package.json check already covers them.
 in_workspace() {
   local d="$1"
   while :; do
@@ -61,13 +64,14 @@ for dir in ${AGENTBOX_NODE_DIRS:-.}; do
   [ "$dir" = . ] && root="$AGENTBOX_WORKSPACE"
   [ -f "$root/package.json" ] || continue
   if in_workspace "$root"; then
-    log "$dir: part of a pnpm/npm/yarn workspace, which agentbox doesn't support yet (installing would write node_modules into member folders on your host). Skipped."
+    log "$dir: part of a pnpm/npm/yarn/bun workspace, which agentbox doesn't support yet (installing would write node_modules into member folders on your host). Skipped."
     rc=1
     continue
   fi
   stamp_file="$root/node_modules/.agentbox-stamp"
   stamp="$(stamp_of "$root"/package.json "$root"/pnpm-lock.yaml "$root"/pnpm-workspace.yaml \
-    "$root"/yarn.lock "$root"/package-lock.json "$root"/npm-shrinkwrap.json "$root"/.npmrc)"
+    "$root"/yarn.lock "$root"/package-lock.json "$root"/npm-shrinkwrap.json "$root"/.npmrc \
+    "$root"/bun.lock "$root"/bun.lockb)"
   if up_to_date "$stamp_file" "$stamp"; then
     log "$dir: up to date"
     continue

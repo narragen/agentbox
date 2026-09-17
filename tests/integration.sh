@@ -18,7 +18,7 @@ export GIT_CONFIG_GLOBAL="$TMP/gitconfig" GIT_CONFIG_NOSYSTEM=1
 printf '[user]\n\tname = Box Test\n\temail = box@test.example\n' > "$GIT_CONFIG_GLOBAL"
 # Every fixture directory a box is launched from. Cleanup derives the box names from
 # this list (launch runs inside $(...), so it can't record them itself).
-FIXTURES=("$TMP/proj" "$TMP/py312" "$TMP/pyproj" "$TMP/feature" "$TMP/dockerproj")
+FIXTURES=("$TMP/proj" "$TMP/py312" "$TMP/pyproj" "$TMP/feature" "$TMP/dockerproj" "$TMP/bunproj")
 cleanup() {
   local d n
   for d in "${FIXTURES[@]}"; do
@@ -169,6 +169,26 @@ docker run --rm --user node -v "$Q":/workspace agentbox:latest bash -c 'cd /work
 QO="$(launch "$Q" 'python -c "import six; print(\"UVSYNC-OK\")"')"
 assert_contains "uv sync --locked in backend/" "$QO" "agentbox[python]: backend: done"
 assert_contains "synced packages importable" "$QO" "UVSYNC-OK"
+
+# ---------------------------------------------------------------------------------------
+echo "-- bun project"
+B="$TMP/bunproj"; mkdir -p "$B"
+printf '{"name":"bunproj","version":"1.0.0","dependencies":{"is-number":"7.0.0"}}\n' > "$B/package.json"
+printf 'console.log("BUN-REQUIRE", require("is-number")(7))\n' > "$B/check.js"
+# Generate a real bun.lock with the image's own bun (follows the npm/pnpm fixture pattern).
+docker run --rm --user node -v "$B":/workspace agentbox:latest bash -c \
+  'cd /workspace && bun install --lockfile-only' >/dev/null
+BO="$(launch "$B")"
+assert_contains "bun install ran" "$BO" "agentbox[node]: .: installing"
+assert_contains "bun frozen install succeeded" "$BO" "agentbox[node]: .: done"
+BO2="$(launch "$B" 'echo "BUN-VER $(bun --version) BUNX $(bunx --version)"
+cd /workspace && bun run check.js')"
+assert_contains "bun relaunch is cached" "$BO2" "agentbox[node]: .: up to date"
+assert_contains "bun and bunx on PATH" "$BO2" "BUN-VER 1.4.2 BUNX 1.4.2"
+assert_contains "bun resolves the frozen install" "$BO2" "BUN-REQUIRE true"
+printf '{"name":"bunproj","version":"1.0.0","dependencies":{"is-number":"7.0.0","is-odd":"3.0.1"}}\n' > "$B/package.json"
+BO3="$(launch "$B")"
+assert_contains "out-of-sync lockfile: bun failure reported" "$BO3" "agentbox[node]: .: install FAILED"
 
 # ---------------------------------------------------------------------------------------
 echo "-- linked worktree"

@@ -175,6 +175,7 @@ changed since last time, this step is skipped.
 |---|---|
 | `pnpm-lock.yaml` | `pnpm install --frozen-lockfile` (pnpm switches to the version in `packageManager`, if set) |
 | `yarn.lock` | `yarn install`, frozen to the lockfile (the version in `packageManager` is used) |
+| `bun.lock` or `bun.lockb` | `bun install --frozen-lockfile` |
 | `package-lock.json` or `npm-shrinkwrap.json` | `npm ci` |
 | `package.json` and no lockfile | `npm install` (this creates `package-lock.json` in your project) |
 | `pyproject.toml` with a `[project]` table | `uv sync --locked` (plain `uv sync` if there's no `uv.lock`, which creates one) |
@@ -192,10 +193,9 @@ Details:
   - Poetry-only `pyproject.toml` files (no `[project]` table) are skipped; use
     `setup.sh` for those.
 - **Not supported yet:**
-  - **pnpm/npm/yarn workspaces (monorepos):** agentbox skips that folder with a
+  - **pnpm/npm/yarn/bun workspaces (monorepos):** agentbox skips that folder with a
     message; such installs would write into your project folders on your machine. A
     `pnpm-workspace.yaml` that only holds settings (no `packages:`) is fine.
-  - **bun:** not in the image. See [Adding a language or tool](#adding-a-language-or-tool).
 - **Where it looks:** by default, the project root. For other folders, see `NODE_DIRS`
   and `PYTHON_DIR` below.
 
@@ -396,7 +396,7 @@ guardrail still applies.
 | Launch seems stuck after `building agentbox:latest` or `checking the image` | The first build, and the first launch after updating agentbox, take several minutes. |
 | `image build failed; starting the EXISTING ...` | The rebuild failed (often network). You're on the previous image; run `agentbox build` to see the error. |
 | `dependency setup FAILED in: ...` | The lines above it say which folder. Usually a manifest and its lockfile disagree: `package.json` vs its lockfile (fix it in the box with `npm install`, `pnpm install` or `yarn install`), or `pyproject.toml` vs `uv.lock` (`uv lock`). Then run `agentbox-deps`. |
-| `part of a pnpm/npm/yarn workspace` | Monorepo workspaces aren't supported yet. The box still works; that folder's dependencies aren't installed. |
+| `part of a pnpm/npm/yarn/bun workspace` | Monorepo workspaces aren't supported yet. The box still works; that folder's dependencies aren't installed. |
 | `refusing to open ...` | You started agentbox in your home folder (or `/`). `cd` into a project folder first. |
 | Claude Code hook or status line errors in the box | Your `~/.claude/settings.json` is shared with the box, and hooks or a status line that call programs or paths from your machine don't exist inside it. Mount what they need via `~/.config/agentbox/binds`, or make them tolerate being absent. |
 | An agent asks you to log in again | Logins are per project. Use a token in `~/.config/agentbox/env`, or log in once in this project's box. `agentbox clean` also removes logins. |
