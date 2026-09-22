@@ -242,4 +242,33 @@ assert_contains "second init reports existing files" "$IOUT2" "exists   .agentbo
 assert_eq "init never overwrites" "mine" "$(cat "$IW/.agentbox/config")"
 if [ ! -e "$IW/.agentbox/codex.config.toml" ]; then pass "the Codex template stays inactive (.example)"; else fail "init activated codex.config.toml"; fi
 
+# --- Docker arg passthrough ---
+# Single docker arg appended before the image name.
+DOUT="$(dry run "$TMP/ws" --docker-arg --network host)"
+assert_line "single --docker-arg passes --network" "$DOUT" "--network"
+assert_line "single --docker-arg passes value" "$DOUT" "host"
+# Verify docker args appear before the image in the argv (line numbers prove ordering).
+net_line="$(printf '%s\n' "$DOUT" | grep -n -F -- '--network' | cut -d: -f1)"
+img_line="$(printf '%s\n' "$DOUT" | grep -n -F -- 'agentbox:latest' | cut -d: -f1)"
+assert_eq "--docker-arg flags appear before the image" "1" "$( [ "$net_line" -lt "$img_line" ] && echo 1 || echo 0 )"
+
+# Multiple docker args collected in order.
+DOUT2="$(dry run "$TMP/ws" --docker-arg --network host --docker-arg -e MYVAR=hello)"
+assert_line "first group passes --network" "$DOUT2" "--network"
+assert_line "first group passes value" "$DOUT2" "host"
+assert_line "second group passes -e" "$DOUT2" "-e"
+assert_line "second group passes env value" "$DOUT2" "MYVAR=hello"
+
+# No DIR: args after --docker-arg are all docker args, DIR defaults to ".".
+DMOUT="$(dry run --docker-arg --shm-size 512m 2>/dev/null)"
+assert_line "no DIR defaults to current dir" "$DMOUT" "$PWD:/workspace"
+assert_line "shm-size passed to docker" "$DMOUT" "--shm-size"
+assert_line "shm-size value passed to docker" "$DMOUT" "512m"
+
+# Docker args with workspace path containing spaces.
+SP="$TMP/with space"
+SP_OUT="$(dry run "$SP" --docker-arg --network bridge)"
+assert_line "docker arg with space path present" "$SP_OUT" "--network"
+assert_line "docker arg with space path value" "$SP_OUT" "bridge"
+
 finish

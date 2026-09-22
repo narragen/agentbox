@@ -44,7 +44,8 @@ usage() {
 Usage: agentbox [COMMAND] [DIR]
 
 Commands (DIR defaults to the current directory):
-  run [DIR]          Open a sandbox shell for DIR (the default command). Builds the
+  run [DIR] [--docker-arg ...]
+                     Open a sandbox shell for DIR (the default command). Builds the
                      image first if needed. If DIR's box is already running, opens
                      another shell in it.
   build [DIR]        Build the image, plus DIR/.agentbox/Dockerfile if present.
@@ -55,6 +56,8 @@ Commands (DIR defaults to the current directory):
   version            Show the agentbox version and pinned tools.
   help               Show this help.
 
+Extra arguments for the underlying Docker command can be passed with --docker-arg.
+Repeat for each argument, e.g. --docker-arg --network host --docker-arg -e FOO=bar.
 Tokens for every box go in ~/.config/agentbox/env; extra host mounts go in
 ~/.config/agentbox/binds. See README.md.
 EOF
@@ -150,7 +153,19 @@ refuse_broad_dir() {
 
 cmd_run() {
   local ws name image
-  ws="$(resolve_ws "${1:-.}")"
+  # Parse --docker-arg from argv: everything before it is positional (DIR), everything
+  # from it onward is passed through to the Docker command.
+  local -a positional=() docker_args=()
+  local i=0 collecting=0
+  for i in "$@"; do
+    if [ "$i" = --docker-arg ]; then collecting=1; continue; fi
+    if [ "$collecting" = 0 ]; then
+      positional+=("$i")
+    else
+      docker_args+=("$i")
+    fi
+  done
+  ws="$(resolve_ws "${positional[0]:-.}")"
   refuse_broad_dir "$ws"
   name="$(sandbox_name "$ws")"
   load_config "$ws"
@@ -271,6 +286,9 @@ cmd_run() {
   local host_tz
   host_tz="$(readlink /etc/localtime 2>/dev/null | sed -E 's#.*/zoneinfo/##' || true)"
   if [ -n "$host_tz" ]; then args+=(-e "TZ=$host_tz"); fi
+
+  # Extra Docker arguments passed via --docker-arg (applied before the image name).
+  if [ "${#docker_args[@]}" -gt 0 ]; then args+=("${docker_args[@]}"); fi
 
   args+=("$image")
 
