@@ -128,10 +128,10 @@ assert_eq "env: CLAUDE line preserved" "CLAUDE_CODE_OAUTH_TOKEN=sk-ant-abc" \
 
 # 3. Config preservation: binds file survives.
 reset_ver "0.1.0"
-printf '~/.claude/foo:/home/node/.claude/foo\n' > "$FAKE_HOME/.config/agentbox/binds"
+printf '%s:%s\n' "$FAKE_HOME/.claude/foo" "/home/node/.claude/foo" > "$FAKE_HOME/.config/agentbox/binds"
 export GIT_PULL_VERSION="0.3.0"
 run_update >/dev/null 2>&1 || true
-assert_eq "binds: preserved" "~/.claude/foo:/home/node/.claude/foo" \
+assert_eq "binds: preserved" "$FAKE_HOME/.claude/foo:/home/node/.claude/foo" \
   "$(cat "$FAKE_HOME/.config/agentbox/binds")"
 
 # 4. Config preservation: approvals file survives.

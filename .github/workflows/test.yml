@@ -15,7 +15,7 @@ jobs:
       - name: shellcheck
         run: |
           shellcheck -x -s bash -S warning \
-            bin/agentbox lib/common.sh install.sh scripts/update-versions.sh \
+            bin/agentbox lib/common.sh install.sh scripts/update.sh scripts/versions.sh \
             image/entrypoint.sh image/agentbox-deps image/zshrc image/guard-git-worktree.sh \
             image/deps.d/*.sh image/deps.d/lib.bash tests/*.sh
       - name: host tests
