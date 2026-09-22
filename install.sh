@@ -108,11 +108,11 @@ fi
 
 # 5. Build the image.
 if [ "$BUILD" = 1 ]; then
-  if ! docker_err="$(docker info 2>&1 >/dev/null)"; then
-    case "$docker_err" in
-      *"permission denied"*) die "Docker is running but you don't have permission to use it. On Linux: sudo usermod -aG docker \$USER, log out and back in, then run: agentbox build" ;;
-      *) die "can't reach the Docker daemon. Start Docker, then run: agentbox build" ;;
-    esac
+  # Subshell: common.sh's globals and die stay out of the installer. The check runs
+  # before any docker use, and the reason (timeout, permissions, daemon down) is
+  # already printed by the shared helper.
+  if ! ( AGENTBOX_HOME="$REPO" . "$REPO/lib/common.sh" && require_docker ); then
+    die "Docker isn't available (reason above). Fix that, then run: agentbox build"
   fi
   echo "Building the agentbox image (first build takes several minutes)..."
   "$REPO/bin/agentbox" build

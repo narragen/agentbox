@@ -26,16 +26,58 @@ sha256_of() {
 }
 
 # require_docker -> die with the likely cause when the daemon can't be reached.
+# The `docker info` probe is bounded: a watchdog kills it after AGENTBOX_DOCKER_TIMEOUT
+# seconds (default 5). A daemon that accepts connections but doesn't answer — Docker
+# Desktop still starting, systemd socket-activation limbo — would otherwise stall
+# startup indefinitely instead of failing with a message. AGENTBOX_DOCKER_TIMEOUT is a
+# test hook, and the escape hatch for a slow (e.g. remote) daemon.
 require_docker() {
+  # a knob like 10s, abc or -1 makes the watchdog's sleep fail, killing the watchdog
+  # at once: the unbounded stall this function exists to prevent would return
+  # silently. validated before the mktemp, so this die leaks no temp file.
+  local t="${AGENTBOX_DOCKER_TIMEOUT:-5}"
+  case "$t" in ''|*[!0-9]*|0) die "AGENTBOX_DOCKER_TIMEOUT must be a positive integer (seconds), got '$t'" ;; esac
   command -v docker >/dev/null 2>&1 || die "docker not found. Install Docker Desktop, OrbStack or Docker Engine."
-  local err
-  if ! err="$(docker info 2>&1 >/dev/null)"; then
-    case "$err" in
-      *"permission denied"*)
-        die "Docker is running but you don't have permission to use it. On Linux: sudo usermod -aG docker \$USER, then log out and back in." ;;
-      *) die "can't reach the Docker daemon. Start Docker Desktop (or the docker service) and try again." ;;
-    esac
-  fi
+  local probe watchdog rc=0 err
+  # global ERR_FILE + EXIT trap: bash runs EXIT traps even on a SIGINT death, so a
+  # Ctrl-C mid-probe no longer leaks the temp file. cmd_run later REPLACES this trap
+  # with its own EXIT trap — safe, the file is already gone by then; install.sh only
+  # runs this check inside a subshell, so its outer shell never sees the trap.
+  ERR_FILE="$(mktemp "${TMPDIR:-/tmp}/agentbox-docker-info.XXXXXX")"
+  trap '[ -z "${ERR_FILE:-}" ] || rm -f "$ERR_FILE" 2>/dev/null' EXIT
+  docker info >"$ERR_FILE" 2>&1 &
+  probe=$!
+  # TERM first, KILL one second later: a docker that ignores TERM must still die.
+  # fds pointed at /dev/null: once the probe finishes, the TERMed subshell orphans its
+  # sleep for up to T seconds — but it holds no fds, so nothing can stall waiting on it.
+  # on Ctrl-C the async subshell ignores SIGINT (POSIX: async lists get SIGINT ignored)
+  # and stays armed up to T seconds pointing at a pid that may by then be reaped —
+  # harmless barring pid wraparound.
+  # the TIMED OUT line is written BEFORE the kill, marking a watchdog-fired death;
+  # the classification below refuses to take a 143/137 exit as proof on its own.
+  ( sleep "$t" && printf 'TIMED OUT\n' >> "$ERR_FILE" && kill -TERM "$probe" && sleep 1 && kill -KILL "$probe" ) </dev/null >/dev/null 2>&1 &
+  watchdog=$!
+  wait "$probe" || rc=$?
+  kill -TERM "$watchdog" 2>/dev/null || true
+  wait "$watchdog" 2>/dev/null || true
+  err="$(cat "$ERR_FILE")"
+  rm -f "$ERR_FILE"
+  ERR_FILE=""
+  if [ "$rc" -eq 0 ]; then return 0; fi
+  # 143/137 alone doesn't prove the watchdog fired — docker can die OOM-killed (137)
+  # or externally TERMed (143) — so the sentinel decides; without it the probe's own
+  # stderr classifies below. (a probe failing right as the sentinel is appended falls
+  # through with its real error — correct.)
+  case "$rc" in
+    143|137) case "$err" in *TIMED\ OUT*)
+      die "Docker isn't responding (it may still be starting up). Make sure the Docker daemon is running locally, then run this command again." ;;
+    esac ;;
+  esac
+  case "$err" in
+    *"permission denied"*)
+      die "Docker is running but you don't have permission to use it. On Linux: sudo usermod -aG docker \$USER, then log out and back in." ;;
+    *) die "can't reach the Docker daemon. Make sure Docker is running locally (start Docker Desktop, or on Linux: sudo systemctl start docker), then run this command again." ;;
+  esac
 }
 
 # sandbox_name ABS_PATH -> "<leaf>-<hash>", unique per directory.
