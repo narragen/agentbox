@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Compare the pins in versions.env with the latest upstream releases.
-#   agentbox update           report only
-#   agentbox update --apply   rewrite outdated pins in versions.env
+#   agentbox versions           report only
+#   agentbox versions --apply   rewrite outdated pins in versions.env
 # NODE_VERSION and PYTHON_VERSION are deliberate choices and are never auto-bumped.
 # Exits 1 if any lookup failed, so an offline run never reports "current".
 set -euo pipefail
@@ -101,7 +101,7 @@ if [ -z "$updates" ]; then
   exit 0
 fi
 if [ "$APPLY" != 1 ]; then
-  echo "Run 'agentbox update --apply' to update versions.env."
+  echo "Run 'agentbox versions --apply' to update versions.env."
   exit 0
 fi
 for kv in $updates; do

@@ -15,7 +15,7 @@ Each project gets its own box. The box keeps that project's agent logins, histor
 
 - **Docker**, one of: macOS — [Docker Desktop](https://www.docker.com/products/docker-desktop/) or [OrbStack](https://orbstack.dev); Linux — Docker Engine, with yourself added to the `docker` group (`sudo usermod -aG docker $USER`, then log out and back in); Windows — WSL2 with Docker Desktop, WSL integration enabled for your distro (Docker Desktop → Settings → Resources → WSL integration) and agentbox run inside WSL.
 - **git** and **bash** (the ones your system ships are fine).
-- **About 6 GB of disk** (image ~4.5 GB, plus a little per project). Optional: `curl` and `jq`, only for `agentbox update`.
+- **About 6 GB of disk** (image ~4.5 GB, plus a little per project). Optional: `curl` and `jq`, only for `agentbox versions`.
 
 ## Quick start
 
@@ -52,7 +52,8 @@ The first run of an agent in a project may show first-run screens (theme, trusti
 | `agentbox init` | Create `.agentbox/` with example settings (see [Configuring a project](#configuring-a-project-agentbox)) |
 | `agentbox build` | Rebuild the image now. `agentbox` also does this automatically when needed |
 | `agentbox clean [-y]` | Delete this project's box: logins, history, installed dependencies and its project image. Exit the box first. Asks before deleting unless `-y` |
-| `agentbox update [--apply]` | Check the pinned tool versions (see [Updating](#updating)) |
+| `agentbox update [--no-build] [--force]` | Pull the latest agentbox from the remote, reinstall, and rebuild the image. See [Updating](#updating). |
+| `agentbox versions [--apply]` | Check the pinned tool versions (see [Updating](#updating)) |
 | `agentbox version` | Show the agentbox version and tool versions, e.g. for a bug report |
 
 | In the box | What it does |
@@ -60,6 +61,14 @@ The first run of an agent in a project may show first-run screens (theme, trusti
 | `claude`, `codex`, `opencode` | Start an agent, with permission prompts off |
 | `agentbox-deps` | Reinstall dependencies after you change a dependency file (`--force`: even if nothing changed) |
 | `exit` | Leave. In the first shell of a box, this stops the box |
+
+**Pass extra flags to Docker.** `--docker-arg` forwards arguments to the underlying `docker run` command. Repeat for each flag:
+
+```bash
+agentbox --docker-arg --network host --docker-arg -e FOO=bar
+```
+
+This is useful for debugging or custom network configurations.
 
 ## Logging in your agents
 
@@ -252,13 +261,21 @@ What comes from your machine instead is the set of [bind mounts](#bind-mounts-wh
 
 ## Updating
 
-**Updating agentbox:** `git pull` in the folder you cloned. The next `agentbox` launch rebuilds the image automatically if anything changed.
+**Updating agentbox:** run the update command from anywhere:
+
+```bash
+agentbox update                       # pull, reinstall, rebuild
+agentbox update --no-build            # same, but skip the image build
+agentbox update --force               # skip the breaking-change confirmation
+```
+
+This pulls the latest from the remote, reinstalls the symlink and PATH entry, preserves your config (`~/.config/agentbox/env`, `~/.config/agentbox/binds`, approvals), and rebuilds the Docker image. On a major version bump it shows `BREAKING_CHANGES.md` and asks for confirmation before proceeding.
 
 **Newer tool versions:** every tool version is pinned in `versions.env` — except `gh`, which comes from GitHub's apt repo and is not pinned — so a pull decides what you get. Maintainers bump the pins with:
 
 ```bash
-agentbox update            # compare with npm, GitHub and PyPI
-agentbox update --apply    # write the newer versions into versions.env
+agentbox versions            # compare with npm, GitHub and PyPI
+agentbox versions --apply    # write the newer versions into versions.env
 agentbox build
 ```
 
@@ -284,7 +301,7 @@ bin/agentbox         the command you run
 lib/common.sh        its helpers (naming, config parsing, git checks, approvals)
 image/               the Docker image: Dockerfile, entrypoint, dependency installers, agent wrappers (zshrc), guardrail policies
 templates/           files `agentbox init` copies
-scripts/             update-versions.sh
+scripts/             update.sh, versions.sh
 tests/               run-all.sh (no Docker needed), integration.sh (needs the image)
 
 # tests
