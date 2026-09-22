@@ -9,8 +9,6 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/agentbox"
-CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/agentbox"
 BIN_DIR="$HOME/.local/bin"
 BUILD=1
 FORCE=0
