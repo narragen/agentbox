@@ -1,16 +1,16 @@
 # agentbox: a disposable sandbox image for coding agents (Claude Code, Codex, opencode).
 #
 # Build it with `agentbox build`, which passes every pin in ../versions.env as a
-# --build-arg. The ARGs below deliberately have NO defaults: a bare `docker build`
-# fails instead of silently producing an image with unknown versions.
+# --build-arg. The ARGs below have "0.0.0" defaults so Docker accepts the FROM lines;
+# a bare `docker build` fails when the FROM can't resolve image:0.0.0.
 #
 # Layer order is cheapest-to-change LAST: agentbox's own scripts and policy files sit
 # at the bottom, so editing them rebuilds in seconds instead of re-running toolchains.
 
-ARG PLAYWRIGHT_VERSION
-ARG UV_VERSION
-ARG NODE_VERSION
-ARG BUN_VERSION
+ARG PLAYWRIGHT_VERSION=0.0.0
+ARG UV_VERSION=0.0.0
+ARG NODE_VERSION=0.0.0
+ARG BUN_VERSION=0.0.0
 
 # --- Ingredient stages ------------------------------------------------------------
 # Playwright's CDN downloader intermittently hangs at 100% (all bytes sent, stream
