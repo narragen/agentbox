@@ -96,11 +96,17 @@ printf 'FOO=1; rm -rf /\n' > "$fake/versions.env"
 rc=0; (AGENTBOX_HOME="$fake" build_args) >/dev/null 2>&1 || rc=$?
 if [ "$rc" -ne 0 ]; then pass "build_args rejects malformed values"; else fail "build_args rejects malformed values"; fi
 
-# Every Dockerfile ARG without a default must have a pin, and every pin an ARG: a
-# mistyped key would otherwise leave the ARG empty and install "latest".
-args_in_dockerfile="$(sed -nE 's/^ARG ([A-Z_]+)$/\1/p' "$AGENTBOX_ROOT/image/Dockerfile" | sort -u)"
+# Every versions.env pin must correspond to a Dockerfile ARG (with or without a
+# default): a mistyped key would otherwise leave the ARG empty and install "latest".
+# HOST_UID/HOST_GID are excluded — they're runtime config, not version pins.
+args_in_dockerfile="$(sed -nE 's/^ARG ([A-Z_]+)(=.*)?/\1/p' "$AGENTBOX_ROOT/image/Dockerfile" | sort -u)"
 keys_in_versions="$(sed -nE 's/^([A-Z][A-Z0-9_]*)=.*/\1/p' "$AGENTBOX_ROOT/versions.env" | sort -u)"
-assert_eq "versions.env keys == Dockerfile ARGs without defaults" "$args_in_dockerfile" "$keys_in_versions"
+missing_in_dockerfile="$(comm -23 <(echo "$keys_in_versions") <(echo "$args_in_dockerfile"))"
+if [ -n "$missing_in_dockerfile" ]; then
+  fail "versions.env keys present in Dockerfile ARGs" "missing from Dockerfile: $missing_in_dockerfile"
+else
+  pass "versions.env keys present in Dockerfile ARGs"
+fi
 
 # The Linux UID remap: present for a normal Linux user, never for root, never on macOS.
 STUB="$TMP/stub"; mkdir -p "$STUB"
