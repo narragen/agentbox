@@ -10,9 +10,13 @@ STUB="$TMP/stub"; mkdir -p "$STUB"
 printf '#!/bin/sh\nexit 0\n' > "$STUB/docker"; chmod +x "$STUB/docker"
 BASEPATH="$STUB:/usr/bin:/bin"
 
+# TO: an optional `timeout 10` prefix for inst (same guard as test-docker-stub.sh).
+# Empty until the hang test arms it: a broken watchdog would hang CI there, and
+# macOS runners lack `timeout`, where the guard degrades to unguarded.
+TO=()
 inst() {  # HOME SHELL ARGS...
   local home="$1" sh="$2"; shift 2
-  env -u XDG_CONFIG_HOME HOME="$home" SHELL="$sh" PATH="$BASEPATH" bash "$INSTALL" "$@" 2>&1
+  ${TO[@]+"${TO[@]}"} env -u XDG_CONFIG_HOME HOME="$home" SHELL="$sh" PATH="$BASEPATH" bash "$INSTALL" "$@" 2>&1
 }
 
 # --- zsh user, fresh install ---
@@ -90,6 +94,19 @@ assert_contains "docker permission problem is explained" "$out" "usermod -aG doc
 printf '#!/bin/sh\necho "Cannot connect to the Docker daemon" >&2\nexit 1\n' > "$STUB/docker"
 rc=0; out="$(inst "$TMP/down" /bin/zsh)" || rc=$?
 assert_contains "stopped docker is explained" "$out" "can't reach the Docker daemon"
+
+# --- docker hangs on info: the bounded probe gives up and reports it ---
+# exec: the watchdog kills the stub itself, so a child sleep would be orphaned
+printf '#!/bin/sh\nif [ "$1" = info ]; then exec sleep 60; fi\n' > "$STUB/docker"
+if command -v timeout >/dev/null 2>&1; then TO=(timeout 10); else TO=(); fi
+export AGENTBOX_DOCKER_TIMEOUT=1
+rc=0; out="$(inst "$TMP/hang" /bin/zsh)" || rc=$?
+unset AGENTBOX_DOCKER_TIMEOUT
+TO=()
+assert_eq "hung docker: install exits non-zero" 1 "$rc"
+assert_contains "hung docker is explained" "$out" "isn't responding"
+assert_contains "hung docker points at the agentbox build follow-up" "$out" "agentbox build"
+printf '#!/bin/sh\nexit 0\n' > "$STUB/docker"
 
 # --- uninstall ---
 inst "$H" /bin/zsh --uninstall >/dev/null

@@ -232,7 +232,8 @@ What comes from your machine instead is the set of [bind mounts](#bind-mounts-wh
 
 | Symptom | Cause and fix |
 |---|---|
-| `can't reach the Docker daemon` | Docker isn't running. Start Docker Desktop (or `sudo systemctl start docker`). |
+| `can't reach the Docker daemon` | Docker isn't running. Start Docker Desktop (or `sudo systemctl start docker`), then run the command again. |
+| `Docker isn't responding` | The daemon is up but not answering, usually still starting. Wait for Docker to finish starting and run the command again; agentbox waits a few seconds (`AGENTBOX_DOCKER_TIMEOUT` to change). |
 | `you don't have permission to use it` | Linux: `sudo usermod -aG docker $USER`, then log out and back in. |
 | `command not found: agentbox` | Open a new terminal after installing, or add `~/.local/bin` to your `PATH`. |
 | `needs an interactive terminal` | Run `agentbox` in a normal terminal tab, not through a pipe, an IDE task, or an agent's shell. |
