@@ -52,7 +52,11 @@ Commands (DIR defaults to the current directory):
   init [DIR]         Create DIR/.agentbox/ with example config files.
   clean [-y] [DIR]   Delete DIR's box: its volumes (agent logins, history, installed
                      dependencies) and its project image.
-  update [--apply]   Check the pinned tool versions against upstream.
+  versions [--apply] Check the pinned tool versions against upstream.
+  update [--no-build] [--force]
+                      Pull the latest agentbox from the remote, reinstall, and
+                      rebuild the image. For major version bumps, shows breaking
+                      changes and asks for confirmation before proceeding.
   version            Show the agentbox version and pinned tools.
   help               Show this help.
 
@@ -312,7 +316,8 @@ case "${1:-run}" in
   build) shift; cmd_build "$@" ;;
   init) shift; cmd_init "$@" ;;
   clean) shift; cmd_clean "$@" ;;
-  update) shift; exec "$AGENTBOX_HOME/scripts/update-versions.sh" "$@" ;;
+  versions) shift; exec "$AGENTBOX_HOME/scripts/versions.sh" "$@" ;;
+  update) shift; exec "$AGENTBOX_HOME/scripts/update.sh" "$@" ;;
   version|--version) cmd_version ;;
   help|-h|--help) usage ;;
   -*) usage >&2; exit 2 ;;

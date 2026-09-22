@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Tests for scripts/update-versions.sh, with curl stubbed (no network).
+# Tests for scripts/versions.sh (agentbox versions command), with curl stubbed (no network).
 set -euo pipefail
 . "$(dirname "$0")/assert.sh"
-SCRIPT="$AGENTBOX_ROOT/scripts/update-versions.sh"
+SCRIPT="$AGENTBOX_ROOT/scripts/versions.sh"
 command -v jq >/dev/null || { echo "jq is required for this test"; exit 1; }
 
 TMP="$(mktemp -d)"
@@ -62,7 +62,7 @@ assert_contains "manual pins are labelled" "$out" "manual (bump by hand)"
 
 out="$(STUB_VERSION=2.0.0 STUB_TAGS='"v2.0.0-noble"' upd)"
 assert_contains "newer versions are reported" "$out" "update available"
-assert_contains "report-only suggests --apply" "$out" "update --apply"
+assert_contains "report-only suggests --apply" "$out" "versions --apply"
 assert_eq "report-only changes nothing" "1.0.0" "$(sed -n 's/^CLAUDE_CODE_VERSION=//p' "$V")"
 
 STUB_VERSION=2.0.0 STUB_TAGS='"v2.0.0-noble"' upd --apply >/dev/null
