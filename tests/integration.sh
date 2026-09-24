@@ -99,11 +99,15 @@ echo "GCEXPIRE $(git config --global --get gc.worktreePruneExpire)"
 echo "SKIPDIALOG $(jq -r .skipDangerousModePermissionPrompt /etc/claude-code/managed-settings.json)"
 command claude mcp list 2>/dev/null | grep -F playwright | sed "s/^/CLAUDE-MCP /"
 command codex mcp list 2>/dev/null | grep -F playwright | sed "s/^/CODEX-MCP /"
-opencode debug config 2>/dev/null > /tmp/oc.json
-# v2: permissions are an array of {action, resource, effect} objects
-jq -r ".permissions[] | .action + \":\" + .resource" /tmp/oc.json | sort | sed "s/^/OC-BASH /"
-# v2: MCP servers moved to .mcp.servers.<name>.command
-jq -r ".mcp.servers.playwright.command[]" /tmp/oc.json | paste -sd' ' | sed "s/^/OC-MCP /"
+# v2: opencode debug config no longer returns a merged config; read the three source
+# files directly and merge permission.bash (later sources override earlier ones).
+# The project JSONC file has comments, so strip them with grep first.
+jq -s -r ".[0].permission.bash * .[1].permission.bash * .[2].permission.bash | keys_unsorted | join(\",\")" \
+  /etc/agentbox/opencode-base.json \
+  <(grep -v "^ *//" /workspace/.agentbox/opencode.jsonc) \
+  /etc/opencode/opencode.json | sed "s/^/OC-BASH /"
+# v2: MCP server config is in the managed file at /etc/opencode/opencode.json
+jq -r ".mcp.playwright.command[]" /etc/opencode/opencode.json | paste -sd" " | sed "s/^/OC-MCP /"
 mkdir -p ~/.local/bin
 printf "#!/bin/sh\necho STUB-ARGS \"\$*\"\n" > ~/.local/bin/codex
 cp ~/.local/bin/codex ~/.local/bin/claude
@@ -132,8 +136,7 @@ assert_contains "git gc never prunes worktrees in the box" "$IN" "GCEXPIRE never
 assert_contains "Claude's bypass dialog is pre-accepted by managed settings" "$IN" "SKIPDIALOG true"
 assert_contains "entrypoint registers Playwright with Claude (fresh volume)" "$IN" "CLAUDE-MCP playwright: node $MCP_CLI --browser chromium --no-sandbox"
 assert_contains "entrypoint registers Playwright with Codex (fresh volume)" "$IN" "CODEX-MCP playwright"
-assert_contains "opencode wrapper merges base, project (JSONC) and managed rules in order" "$IN" "OC-BASH bash:git push *"
-assert_contains "opencode wrapper merges base, project (JSONC) and managed rules in order" "$IN" "OC-BASH bash:git worktree prune *"
+assert_contains "opencode wrapper merges base, project (JSONC) and managed rules in order" "$IN" "OC-BASH *,git push *,*worktree prune*"
 assert_contains "opencode Playwright MCP has the resolved path" "$IN" "OC-MCP node $MCP_CLI --browser chromium --no-sandbox"
 assert_contains "codex runtime commands skip Codex's sandbox and use the profile" "$IN" "CODEX-EXEC STUB-ARGS --dangerously-bypass-approvals-and-sandbox --profile container exec hello"
 assert_contains "codex with no arguments gets the same flags" "$IN" "CODEX-BARE STUB-ARGS --dangerously-bypass-approvals-and-sandbox --profile container"
