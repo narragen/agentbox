@@ -101,9 +101,9 @@ command claude mcp list 2>/dev/null | grep -F playwright | sed "s/^/CLAUDE-MCP /
 command codex mcp list 2>/dev/null | grep -F playwright | sed "s/^/CODEX-MCP /"
 opencode debug config 2>/dev/null > /tmp/oc.json
 # v2: permissions are an array of {action, resource, effect} objects
-jq -r '.permissions[] | .action + ":" + .resource' /tmp/oc.json | sort | sed "s/^/OC-BASH /"
+jq -r ".permissions[] | .action + \":\" + .resource" /tmp/oc.json | sort | sed "s/^/OC-BASH /"
 # v2: MCP servers moved to .mcp.servers.<name>.command
-jq -r '.mcp.servers.playwright.command[]' /tmp/oc.json | paste -sd' ' | sed "s/^/OC-MCP /"
+jq -r ".mcp.servers.playwright.command[]" /tmp/oc.json | paste -sd' ' | sed "s/^/OC-MCP /"
 mkdir -p ~/.local/bin
 printf "#!/bin/sh\necho STUB-ARGS \"\$*\"\n" > ~/.local/bin/codex
 cp ~/.local/bin/codex ~/.local/bin/claude
