@@ -99,9 +99,15 @@ echo "GCEXPIRE $(git config --global --get gc.worktreePruneExpire)"
 echo "SKIPDIALOG $(jq -r .skipDangerousModePermissionPrompt /etc/claude-code/managed-settings.json)"
 command claude mcp list 2>/dev/null | grep -F playwright | sed "s/^/CLAUDE-MCP /"
 command codex mcp list 2>/dev/null | grep -F playwright | sed "s/^/CODEX-MCP /"
-opencode debug config 2>/dev/null > /tmp/oc.json
-jq -r ".permission.bash | keys_unsorted | join(\",\")" /tmp/oc.json | sed "s/^/OC-BASH /"
-jq -r ".mcp.playwright.command | join(\" \")" /tmp/oc.json | sed "s/^/OC-MCP /"
+# v2: opencode debug config no longer returns a merged config; read the three source
+# files directly and merge permission.bash (later sources override earlier ones).
+# The project JSONC file has comments, so strip them with grep first.
+jq -s -r ".[0].permission.bash * .[1].permission.bash * .[2].permission.bash | keys_unsorted | join(\",\")" \
+  /etc/agentbox/opencode-base.json \
+  <(grep -v "^ *//" /workspace/.agentbox/opencode.jsonc) \
+  /etc/opencode/opencode.json | sed "s/^/OC-BASH /"
+# v2: MCP server config is in the managed file at /etc/opencode/opencode.json
+jq -r ".mcp.playwright.command[]" /etc/opencode/opencode.json | paste -sd" " | sed "s/^/OC-MCP /"
 mkdir -p ~/.local/bin
 printf "#!/bin/sh\necho STUB-ARGS \"\$*\"\n" > ~/.local/bin/codex
 cp ~/.local/bin/codex ~/.local/bin/claude

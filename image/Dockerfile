@@ -37,9 +37,7 @@ ARG PRE_COMMIT_VERSION
 # passes these on Linux; Docker Desktop (macOS) remaps ownership itself, so it doesn't.
 ARG HOST_UID=1000
 ARG HOST_GID=1000
-RUN if [ "$HOST_UID" != 1000 ] || [ "$HOST_GID" != 1000 ]; then \
-      groupmod -o -g "$HOST_GID" node && usermod -o -u "$HOST_UID" -g "$HOST_GID" node; \
-    fi
+RUN test "$HOST_UID" = 1000 && test "$HOST_GID" = 1000 || { groupmod -o -g "$HOST_GID" node && usermod -o -u "$HOST_UID" -g "$HOST_GID" node; }
 
 ENV LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
@@ -69,9 +67,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # delta: readable git diffs in the terminal.
-RUN deb="/tmp/delta.deb" \
-  && curl -fsSLo "$deb" "https://github.com/dandavison/delta/releases/download/${GIT_DELTA_VERSION}/git-delta_${GIT_DELTA_VERSION}_$(dpkg --print-architecture).deb" \
-  && dpkg -i "$deb" && rm "$deb"
+RUN curl -fsSLo /tmp/delta.deb "https://github.com/dandavison/delta/releases/download/${GIT_DELTA_VERSION}/git-delta_${GIT_DELTA_VERSION}_$(dpkg --print-architecture).deb" \
+  && dpkg -i /tmp/delta.deb && rm /tmp/delta.deb
 
 COPY --from=uv /uv /uvx /usr/local/bin/
 # Copy the bun binary and create the bunx link explicitly instead of relying on COPY
@@ -108,7 +105,7 @@ ENV NPM_CONFIG_PREFIX=/usr/local/share/npm-global \
 # --- Agent CLIs (one layer each: bumping one version doesn't reinstall the others) ---
 RUN npm install -g --no-audit --no-fund @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} && npm cache clean --force
 RUN npm install -g --no-audit --no-fund @openai/codex@${CODEX_VERSION} && npm cache clean --force
-RUN npm install -g --no-audit --no-fund opencode-ai@${OPENCODE_VERSION} && npm cache clean --force
+RUN npm install -g --no-audit --no-fund @opencode/cli@${OPENCODE_VERSION} && npm cache clean --force
 
 # --- Toolchains ---------------------------------------------------------------------
 # yarn is served by corepack (bundled with Node 24) and honours a project's

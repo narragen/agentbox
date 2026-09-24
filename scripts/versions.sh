@@ -24,7 +24,7 @@ source_for() {
   case "$1" in
     CLAUDE_CODE_VERSION) echo "npm @anthropic-ai/claude-code" ;;
     CODEX_VERSION) echo "npm @openai/codex" ;;
-    OPENCODE_VERSION) echo "npm opencode-ai" ;;
+    OPENCODE_VERSION) echo "npm @opencode/cli" ;;
     PNPM_VERSION) echo "npm pnpm" ;;
     PLAYWRIGHT_MCP_VERSION) echo "npm @playwright/mcp" ;;
     PLAYWRIGHT_VERSION) echo "npm playwright" ;;
