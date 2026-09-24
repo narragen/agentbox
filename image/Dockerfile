@@ -108,7 +108,7 @@ ENV NPM_CONFIG_PREFIX=/usr/local/share/npm-global \
 # --- Agent CLIs (one layer each: bumping one version doesn't reinstall the others) ---
 RUN npm install -g --no-audit --no-fund @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} && npm cache clean --force
 RUN npm install -g --no-audit --no-fund @openai/codex@${CODEX_VERSION} && npm cache clean --force
-RUN npm install -g --no-audit --no-fund opencode-ai@${OPENCODE_VERSION} && npm cache clean --force
+RUN npm install -g --no-audit --no-fund @opencode/cli@${OPENCODE_VERSION} && npm cache clean --force
 
 # --- Toolchains ---------------------------------------------------------------------
 # yarn is served by corepack (bundled with Node 24) and honours a project's
